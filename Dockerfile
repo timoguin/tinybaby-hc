@@ -7,12 +7,11 @@ ENV GOOS=${GOOS}
 ENV GOARCH=${GOARCH}
 ENV CGO_ENABLED=${CGO_ENABLED}
 
+RUN apk --no-cache add git
 ADD . /go/src/app
 WORKDIR /go/src/app
-RUN apk --no-cache add git
-RUN go get && go build -o tiny-baby-health-checker
+RUN go get && go build -o tinybaby-hc
 
 FROM scratch
-COPY --from=build /go/src/app/tiny-baby-health-checker /
-EXPOSE 80
-CMD ["/tiny-baby-health-checker"]
+COPY --from=build /go/src/app/tinybaby-hc /
+CMD ["/tinybaby-hc"]

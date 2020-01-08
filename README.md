@@ -1,12 +1,12 @@
 # Tiny Baby Health Checker
 
-An 8MB Golang web server that returns a 200 OK for the root path. The Docker
+A 9MB Golang web server that returns a 200 OK for the root path. The Docker
 image is just as small since it's based off of the Docker scratch image.
 
 To build:
 
-    $ docker build -t tiny-baby .
+    $ docker build -t tinybaby-hc:latest .
 
 Available config options:
 
-- TINY_BABY_PORT: port for the server to listen on, defaults to 80
+- `TINYBABY_LISTEN_ADDR`: Address for the server to listen on, defaults to `:5000`

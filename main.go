@@ -1,109 +1,105 @@
 package main
 
 import (
-    "context"
-    //"flag"
-    "fmt"
-    //"log"
-    //"zap"
-    "net/http"
-    "os"
-    "os/signal"
-    //"sync/atomic"
-    "time"
+	"context"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
 
-    "go.uber.org/zap"
+	"go.uber.org/zap"
 )
 
-//var (
-//    listenAddr string
-//)
+var listenAddr string
 
 func main() {
-    port, portIsSet := os.LookupEnv("TINY_BABY_PORT")
-    if !portIsSet {
-            port = "80"
+	// Check env for listenAddr, default to ":5000"
+    listenAddr, listenAddrSet := os.LookupEnv("TINYBABY_LISTEN_ADDR")
+    if !listenAddrSet {
+        listenAddr = ":5000"
     }
 
-    listenAddr := fmt.Sprintf(":%s", port)
+	// Setup logger and ensure buffer gets flushed
+    logger, err := zap.NewProduction()
+	if err != nil {
+		logger.Fatal("Failed to initialize zap logger", 
+            zap.String("err", err.Error()),
+        )
+	}
+	defer logger.Sync()
 
-//    flag.StringVar(&listenAddr, "listen-addr", ":5000", "server listen address")
-//    flag.Parse()
+	logger.Info("Server is starting")
 
-    zapLogger, _ := zap.NewProduction()
-    defer zapLogger.Sync() // flushes buffer, if any
-    logger := zapLogger.Sugar()
-    
-    logger.Info("Server is starting...")
+	router := http.NewServeMux()
+	router.Handle("/", index())
 
-    router := http.NewServeMux()
-    router.Handle("/", index())
+	server := &http.Server{
+		Addr:         listenAddr,
+		Handler:      logging(logger)(router),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  15 * time.Second,
+	}
 
-//    nextRequestID := func() string {
-//        return fmt.Sprintf("%d", time.Now().UnixNano())
-//    }
+	done := make(chan bool)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
 
-    server := &http.Server{
-        Addr:         listenAddr,
-        Handler:      logging(logger)(router),
-        //ErrorLog:     logger,
-        ReadTimeout:  5 * time.Second,
-        WriteTimeout: 10 * time.Second,
-        IdleTimeout:  15 * time.Second,
-    }
+	go func() {
+		<-quit
+		logger.Info("Server is shutting down")
 
-    done := make(chan bool)
-    quit := make(chan os.Signal, 1)
-    signal.Notify(quit, os.Interrupt)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 
-    go func() {
-        <-quit
-        logger.Info("Server is shutting down...")
+		server.SetKeepAlivesEnabled(false)
+		if err := server.Shutdown(ctx); err != nil {
+			logger.Fatal("Could not gracefully shutdown the server",
+                zap.Error(err),
+			)
+		}
+		close(done)
+	}()
 
-        ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-        defer cancel()
+	logger.Info("Server is ready to handle requests",
+		zap.String("addr", listenAddr),
+	)
 
-        server.SetKeepAlivesEnabled(false)
-        if err := server.Shutdown(ctx); err != nil {
-            logger.Fatal("Could not gracefully shutdown the server", "err", err)
-        }
-        close(done)
-    }()
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Fatal("Could not listen on address",
+			zap.String("listenAdd", listenAddr),
+			zap.Error(err),
+		)
+	}
 
-    logger.Info("Server is ready to handle requests", "addr", listenAddr)
-    if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-        logger.Fatalf("Could not listen on %s: %v\n", listenAddr, "err", err)
-    }
-
-    <-done
-    logger.Info("Server stopped")
+	<-done
+	logger.Info("Server stopped")
 }
 
 func index() http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if r.URL.Path != "/" {
-            http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-            return
-        }
-        w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-        w.Header().Set("X-Content-Type-Options", "nosniff")
-        w.WriteHeader(http.StatusOK)
-        fmt.Fprintln(w, "OK")
-    })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+	})
 }
 
-func logging(logger *zap.SugaredLogger) func(http.Handler) http.Handler {
-    return func(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            defer func() {
-                logger.Infow("Got 'em",
-                    "method", r.Method,
-                    "path", r.URL.Path,
-                    "remoteaddr", r.RemoteAddr,
-                    "useragent", r.UserAgent(),
-                )
-            }()
-            next.ServeHTTP(w, r)
-        })
-    }
+func logging(logger *zap.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				logger.Info("Handled request",
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.String("remoteaddr", r.RemoteAddr),
+					zap.String("useragent", r.UserAgent()),
+				)
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
