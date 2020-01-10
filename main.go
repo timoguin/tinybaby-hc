@@ -14,17 +14,17 @@ var listenAddr string
 
 func main() {
 	// Check env for listenAddr, default to ":5000"
-    listenAddr, listenAddrSet := os.LookupEnv("TINYBABY_LISTEN_ADDR")
-    if !listenAddrSet {
-        listenAddr = ":5000"
-    }
+	listenAddr, listenAddrSet := os.LookupEnv("TINYBABY_LISTEN_ADDR")
+	if !listenAddrSet {
+		listenAddr = ":5000"
+	}
 
 	// Setup logger and ensure buffer gets flushed
-    logger, err := zap.NewProduction()
+	logger, err := zap.NewProduction()
 	if err != nil {
-		logger.Fatal("Failed to initialize zap logger", 
-            zap.String("err", err.Error()),
-        )
+		logger.Fatal("Failed to initialize zap logger",
+			zap.String("err", err.Error()),
+		)
 	}
 	defer logger.Sync()
 
@@ -55,7 +55,7 @@ func main() {
 		server.SetKeepAlivesEnabled(false)
 		if err := server.Shutdown(ctx); err != nil {
 			logger.Fatal("Could not gracefully shutdown the server",
-                zap.Error(err),
+				zap.Error(err),
 			)
 		}
 		close(done)
